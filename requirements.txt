@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+ollama
+python-dotenv
+requests
+pillow
+numpy
+python-multipart
+httpx
+google-generativeai
