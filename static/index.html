@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgroAI Assistant</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="sidebar" aria-label="Farmer context">
+        <div>
+          <h1>AgroAI</h1>
+          <p>Crop disease support for farmers</p>
+        </div>
+
+        <label>
+          Farmer name
+          <input id="farmerName" type="text" autocomplete="name" placeholder="Optional" />
+        </label>
+
+        <label>
+          Crop
+          <input id="crop" type="text" value="wheat" />
+        </label>
+
+        <label>
+          Location
+          <input id="location" type="text" placeholder="Village, district, state" />
+        </label>
+
+        <label>
+          Disease
+          <input id="disease" type="text" placeholder="Upload image or type disease" />
+        </label>
+
+        <label class="file-control">
+          Crop image
+          <input id="image" type="file" accept="image/*" />
+        </label>
+
+        <button id="diagnoseButton" type="button">Diagnose Image</button>
+        <div id="diagnosis" class="diagnosis" aria-live="polite"></div>
+      </section>
+
+      <section class="chat-panel" aria-label="Assistant chat">
+        <div id="messages" class="messages"></div>
+
+        <form id="chatForm" class="composer">
+          <textarea
+            id="message"
+            rows="3"
+            placeholder="Ask about symptoms, treatment, prevention, or what to do next..."
+            required
+          ></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
