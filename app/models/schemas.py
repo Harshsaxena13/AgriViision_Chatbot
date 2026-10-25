@@ -71,3 +71,40 @@ class DiseaseDetectionResponse(BaseModel):
     disease: str
     confidence: Optional[float] = None
     raw_response: dict[str, Any]
+
+
+class SpeechToTextResponse(BaseModel):
+    request_id: Optional[str] = None
+    transcript: str
+    language_code: Optional[str] = None
+    language_probability: Optional[float] = None
+    timestamps: Optional[dict[str, Any]] = None
+    model: str = "saaras:v4"
+    raw_response: dict[str, Any]
+
+
+class TextToSpeechRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2500)
+    language_code: str = Field(default="en-IN", min_length=2, max_length=20)
+    speaker: Optional[str] = Field(default="shubh", max_length=80)
+    pace: Optional[float] = Field(default=1.0, ge=0.5, le=2.0)
+    speech_sample_rate: Optional[int] = Field(default=24000)
+    output_audio_codec: Optional[str] = Field(default="wav", max_length=20)
+    temperature: Optional[float] = Field(default=0.6, ge=0.01, le=2.0)
+
+    @field_validator("text", "language_code", "speaker", "output_audio_codec")
+    @classmethod
+    def normalize_optional_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
+class TextToSpeechResponse(BaseModel):
+    request_id: Optional[str] = None
+    audios: list[str]
+    model: str = "bulbul:v3"
+    output_audio_codec: Optional[str] = "wav"
+    speech_sample_rate: Optional[int] = 24000
+    raw_response: dict[str, Any]

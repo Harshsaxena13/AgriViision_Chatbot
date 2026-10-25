@@ -30,6 +30,12 @@ class Settings(BaseModel):
     disease_api_predict_path: str = Field(default="/predict")
     disease_api_file_field: str = Field(default="file")
     disease_api_timeout_seconds: float = Field(default=90.0, ge=1.0, le=180.0)
+    sarvam_api_key: Optional[str] = Field(default=None)
+    sarvam_stt_url: str = Field(default="https://api.sarvam.ai/speech-to-text")
+    sarvam_tts_url: str = Field(default="https://api.sarvam.ai/text-to-speech")
+    sarvam_stt_model: str = Field(default="saaras:v4")
+    sarvam_tts_model: str = Field(default="bulbul:v3")
+    sarvam_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -61,4 +67,10 @@ def get_settings() -> Settings:
         disease_api_predict_path=os.getenv("DISEASE_API_PREDICT_PATH", "/predict"),
         disease_api_file_field=os.getenv("DISEASE_API_FILE_FIELD", "file"),
         disease_api_timeout_seconds=float(os.getenv("DISEASE_API_TIMEOUT_SECONDS", "90")),
+        sarvam_api_key=os.getenv("SARVAM_API_KEY"),
+        sarvam_stt_url=os.getenv("SARVAM_STT_URL", "https://api.sarvam.ai/speech-to-text"),
+        sarvam_tts_url=os.getenv("SARVAM_TTS_URL", "https://api.sarvam.ai/text-to-speech"),
+        sarvam_stt_model=os.getenv("SARVAM_STT_MODEL", "saaras:v4"),
+        sarvam_tts_model=os.getenv("SARVAM_TTS_MODEL", "bulbul:v3"),
+        sarvam_timeout_seconds=float(os.getenv("SARVAM_TIMEOUT_SECONDS", "45")),
     )

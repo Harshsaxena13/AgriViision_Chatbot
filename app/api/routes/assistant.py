@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 
 from app.models.schemas import (
     AssistantRequest,
     AssistantResponse,
     ChatSession,
     DiseaseDetectionResponse,
+    SpeechToTextResponse,
+    TextToSpeechRequest,
+    TextToSpeechResponse,
 )
 from app.services.chat_history import ChatHistoryService, get_chat_history_service
 from app.services.disease_detection import (
@@ -12,6 +17,7 @@ from app.services.disease_detection import (
     get_disease_detection_service,
 )
 from app.services.assistant import AgriculturalAssistantService, get_assistant_service
+from app.services.sarvam_voice import SarvamVoiceService, get_sarvam_voice_service
 
 
 router = APIRouter()
@@ -67,3 +73,31 @@ async def diagnose_wheat_disease(
     service: WheatDiseaseDetectionService = Depends(get_disease_detection_service),
 ) -> DiseaseDetectionResponse:
     return await service.predict_upload(image)
+
+
+@router.post("/assistant/voice/transcribe", response_model=SpeechToTextResponse)
+async def transcribe_voice(
+    audio: UploadFile = File(...),
+    language_code: Optional[str] = Form(default="unknown"),
+    mode: Optional[str] = Form(default="transcribe"),
+    with_timestamps: bool = Form(default=False),
+    input_audio_codec: Optional[str] = Form(default=None),
+    keyterms: Optional[list[str]] = Form(default=None),
+    service: SarvamVoiceService = Depends(get_sarvam_voice_service),
+) -> SpeechToTextResponse:
+    return await service.transcribe_upload(
+        audio=audio,
+        language_code=language_code,
+        mode=mode,
+        with_timestamps=with_timestamps,
+        input_audio_codec=input_audio_codec,
+        keyterms=keyterms,
+    )
+
+
+@router.post("/assistant/voice/synthesize", response_model=TextToSpeechResponse)
+async def synthesize_voice(
+    payload: TextToSpeechRequest,
+    service: SarvamVoiceService = Depends(get_sarvam_voice_service),
+) -> TextToSpeechResponse:
+    return await service.synthesize(payload)

@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.models.schemas import ErrorResponse
 from app.services.assistant import AssistantServiceError
 from app.services.disease_detection import DiseaseDetectionError
+from app.services.sarvam_voice import SarvamVoiceError
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,20 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_502_BAD_GATEWAY,
             content=ErrorResponse(
                 error="disease_detection_error",
+                detail=str(exc),
+                request_id=request.headers.get("x-request-id"),
+            ).model_dump(),
+        )
+
+    @app.exception_handler(SarvamVoiceError)
+    async def sarvam_voice_exception_handler(
+        request: Request, exc: SarvamVoiceError
+    ) -> JSONResponse:
+        logger.exception("Sarvam voice service failed")
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content=ErrorResponse(
+                error="sarvam_voice_error",
                 detail=str(exc),
                 request_id=request.headers.get("x-request-id"),
             ).model_dump(),

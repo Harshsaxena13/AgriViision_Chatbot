@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AgroAI Assistant</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20261007-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -47,17 +47,128 @@
         <div id="messages" class="messages"></div>
 
         <form id="chatForm" class="composer">
-          <textarea
-            id="message"
-            rows="3"
-            placeholder="Ask about symptoms, treatment, prevention, or what to do next..."
-            required
-          ></textarea>
-          <button type="submit">Send</button>
+          <div class="input-bar">
+            <button
+              id="attachButton"
+              class="icon-button"
+              type="button"
+              aria-label="Attach crop image"
+              title="Attach crop image"
+            >
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2.2"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span class="button-label">Attach</span>
+            </button>
+
+            <textarea
+              id="message"
+              rows="1"
+              placeholder="Ask anything"
+              required
+            ></textarea>
+
+            <div class="composer-actions">
+              <button
+                id="micButton"
+                class="icon-button"
+                type="button"
+                aria-label="Voice input"
+                aria-pressed="false"
+                title="Voice input"
+              >
+                <svg
+                  aria-hidden="true"
+                  focusable="false"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2.2"
+                >
+                  <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+                  <path d="M19 11a7 7 0 0 1-14 0" />
+                  <path d="M12 18v3" />
+                  <path d="M8 21h8" />
+                </svg>
+                <span class="button-label">Mic</span>
+              </button>
+
+              <button
+                id="voiceModeButton"
+                class="icon-button voice-mode-button"
+                type="button"
+                aria-label="Start voice mode"
+                aria-pressed="false"
+                title="Start voice mode"
+              >
+                <svg
+                  aria-hidden="true"
+                  focusable="false"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2.2"
+                >
+                  <path d="M5 14v-4" />
+                  <path d="M9 18V6" />
+                  <path d="M13 16V8" />
+                  <path d="M17 19V5" />
+                  <path d="M21 14v-4" />
+                </svg>
+                <span class="button-label">Voice</span>
+              </button>
+
+              <button
+                id="sendButton"
+                class="icon-button send-button"
+                type="submit"
+                aria-label="Send message"
+                title="Send message"
+              >
+                <svg
+                  aria-hidden="true"
+                  focusable="false"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2.2"
+                >
+                  <path d="M12 19V5" />
+                  <path d="M5 12l7-7 7 7" />
+                </svg>
+                <span class="button-label">Send</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="voiceStatus" class="voice-status" aria-live="polite"></div>
         </form>
       </section>
     </main>
 
-    <script src="/app.js"></script>
+    <script src="/app.js?v=20261007-2"></script>
   </body>
 </html>
