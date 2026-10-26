@@ -27,9 +27,11 @@ permission enabled.
 
 - `GET /api/v1/health`
 - `POST /api/v1/assistant/ask`
+- `POST /api/v1/assistant/chat`
 - `POST /api/v1/assistant/diagnose`
 - `POST /api/v1/assistant/voice/transcribe`
 - `POST /api/v1/assistant/voice/synthesize`
+- `POST /api/v1/assistant/voice/chat`
 - `GET /api/v1/assistant/chats/{conversation_id}`
 
 Image diagnosis expects multipart form data:
@@ -50,6 +52,18 @@ Example request:
   "language": "en"
 }
 ```
+
+`/assistant/chat` accepts the same fields as multipart form data, plus an optional PDF
+(up to 10 MB). Text from the first 10 pages (up to 8000 characters) is added to the message:
+
+```bash
+curl -X POST http://127.0.0.1:8001/api/v1/assistant/chat \
+  -F "message=What does this soil report recommend for wheat?" \
+  -F "crop=wheat" \
+  -F "file=@/path/to/soil-report.pdf"
+```
+
+Scanned PDFs have no extractable text, so they are rejected with a request to send a photo.
 
 Chat requests are saved to SQLite at `data/agro_assistant.db`.
 
@@ -82,6 +96,18 @@ curl -X POST http://127.0.0.1:8001/api/v1/assistant/voice/synthesize \
     "speaker": "shubh"
   }'
 ```
+
+Have a full spoken conversation turn (speech-to-text, assistant reply in voice mode, then
+text-to-speech in the detected language). Both turns are saved to chat history:
+
+```bash
+curl -X POST http://127.0.0.1:8001/api/v1/assistant/voice/chat \
+  -F "audio=@/path/to/question.wav" \
+  -F "conversation_id=optional-existing-id"
+```
+
+The response contains `transcript`, `detected_language`, `answer_text`, `audios` (base64 WAV
+clips to play in order) and `conversation_id`. Leave out `language_code` to auto-detect.
 
 Because your model API uses port `8000`, run this assistant app on a different port:
 

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
+from fastapi import UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -24,6 +25,18 @@ class AssistantRequest(BaseModel):
             return value
         normalized = value.strip()
         return normalized or None
+
+
+class AssistantChatForm(AssistantRequest):
+    """Multipart form for /assistant/chat: the /assistant/ask fields plus an optional PDF."""
+
+    file: Optional[UploadFile] = None
+
+    @field_validator("file", mode="before")
+    @classmethod
+    def empty_file_to_none(cls, value: Any) -> Any:
+        # Browsers send an empty string for a file input left blank.
+        return None if value == "" else value
 
 
 class AssistantResponse(BaseModel):
@@ -100,6 +113,14 @@ class TextToSpeechRequest(BaseModel):
             return value
         normalized = value.strip()
         return normalized or None
+
+
+class VoiceChatResponse(BaseModel):
+    transcript: str
+    detected_language: Optional[str] = None
+    answer_text: str
+    audios: list[str]
+    conversation_id: str
 
 
 class TextToSpeechResponse(BaseModel):

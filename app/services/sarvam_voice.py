@@ -1,5 +1,8 @@
+import asyncio
 import json
 import logging
+import re
+import textwrap
 from typing import Any, Optional
 
 import httpx
@@ -16,9 +19,47 @@ from app.models.schemas import (
 
 logger = logging.getLogger(__name__)
 
+TTS_MAX_CHARS = 2500
+# Sarvam's recommended male bulbul:v3 voice for each TTS language. Its keys are the only
+# languages Sarvam TTS supports; speaker names are only valid for bulbul:v3.
+BULBUL_V3_SPEAKERS = {
+    "bn-IN": "rehan",
+    "en-IN": "ratan",
+    "gu-IN": "ratan",
+    "hi-IN": "shubh",
+    "kn-IN": "shubh",
+    "ml-IN": "shubh",
+    "mr-IN": "ratan",
+    "od-IN": "shubh",
+    "pa-IN": "mani",
+    "ta-IN": "ratan",
+    "te-IN": "shubh",
+}
+# Used when STT detects no language or one that TTS cannot speak (e.g. ur-IN, as-IN).
+FALLBACK_TTS_LANGUAGE = "hi-IN"
+# Sentence ends in Latin, Devanagari/Bengali/Gurmukhi/Odia (danda) and Urdu punctuation.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?।॥۔؟])\s+")
+
 
 class SarvamVoiceError(RuntimeError):
     """Raised when Sarvam voice APIs cannot complete a request."""
+
+
+def split_tts_text(text: str, max_chars: int = TTS_MAX_CHARS) -> list[str]:
+    """Pack whole sentences into chunks of at most max_chars, splitting overlong sentences on words."""
+    chunks: list[str] = []
+    current = ""
+    for sentence in _SENTENCE_BOUNDARY.split(text.strip()):
+        for piece in textwrap.wrap(sentence, max_chars, break_on_hyphens=False):
+            candidate = f"{current} {piece}" if current else piece
+            if len(candidate) <= max_chars:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = piece
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 class SarvamVoiceService:
@@ -177,6 +218,26 @@ class SarvamVoiceService:
             speech_sample_rate=request.speech_sample_rate,
             raw_response=body,
         )
+
+    async def synthesize_speech(self, text: str, language_code: Optional[str]) -> list[str]:
+        """Synthesize text of any length, returning base64 WAV audios in reading order."""
+        if language_code not in BULBUL_V3_SPEAKERS:
+            logger.warning(
+                "Sarvam TTS does not support language=%s; using %s",
+                language_code,
+                FALLBACK_TTS_LANGUAGE,
+            )
+            language_code = FALLBACK_TTS_LANGUAGE
+        speaker = BULBUL_V3_SPEAKERS[language_code]
+        responses = await asyncio.gather(
+            *(
+                self.synthesize(
+                    TextToSpeechRequest(text=chunk, language_code=language_code, speaker=speaker)
+                )
+                for chunk in split_tts_text(text)
+            )
+        )
+        return [audio for response in responses for audio in response.audios]
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
