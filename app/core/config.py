@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ class Settings(BaseModel):
     api_prefix: str = Field(default="/api/v1")
     debug: bool = Field(default=False)
     log_level: str = Field(default="INFO")
+    cors_origins: List[str] = Field(default_factory=list)
 
     ai_provider: Literal["gemini", "ollama", "openrouter", "rule_based"] = Field(default="rule_based")
     gemini_api_key: Optional[str] = Field(default=None)
@@ -45,6 +46,11 @@ def _get_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_list(name: str) -> List[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
@@ -53,6 +59,7 @@ def get_settings() -> Settings:
         api_prefix=os.getenv("API_PREFIX", "/api/v1"),
         debug=_get_bool("DEBUG", False),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        cors_origins=_get_list("CORS_ORIGINS"),
         ai_provider=os.getenv("AI_PROVIDER", "rule_based"),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),

@@ -6,3 +6,5 @@ venv/
 .env.local
 .idea/
 .vscode/
+.DS_Store
+data/*.db
