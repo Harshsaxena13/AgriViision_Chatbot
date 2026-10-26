@@ -13,6 +13,7 @@ class AssistantRequest(BaseModel):
     disease: Optional[str] = Field(default=None, max_length=150)
     location: Optional[str] = Field(default=None, max_length=150)
     language: str = Field(default="en", min_length=2, max_length=20)
+    mode: Literal["text", "voice"] = Field(default="text")
 
     @field_validator(
         "message", "conversation_id", "farmer_name", "crop", "disease", "location", "language"

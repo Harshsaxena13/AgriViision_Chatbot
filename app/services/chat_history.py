@@ -81,6 +81,21 @@ class ChatHistoryService:
             messages=[ChatMessage(**dict(row)) for row in rows],
         )
 
+    async def get_recent_messages(self, conversation_id: str, limit: int) -> list[ChatMessage]:
+        # created_at has one-second resolution, so rowid breaks ties in insertion order.
+        rows = await asyncio.to_thread(
+            fetch_all,
+            """
+            SELECT role, content, crop, disease, location, provider, model, created_at
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (conversation_id, limit),
+        )
+        return [ChatMessage(**dict(row)) for row in reversed(rows)]
+
 
 def get_chat_history_service() -> ChatHistoryService:
     return ChatHistoryService()

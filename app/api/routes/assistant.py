@@ -36,6 +36,8 @@ async def ask_assistant(
     conversation_id = await history.ensure_conversation(
         payload.conversation_id, payload.farmer_name
     )
+    # Load before saving the new message so it is not sent twice.
+    previous_messages = await history.get_recent_messages(conversation_id, limit=10)
     await history.add_message(
         conversation_id=conversation_id,
         role="user",
@@ -44,7 +46,7 @@ async def ask_assistant(
         disease=payload.disease,
         location=payload.location,
     )
-    response = await service.answer(payload)
+    response = await service.answer(payload, previous_messages)
     response.conversation_id = conversation_id
     await history.add_message(
         conversation_id=conversation_id,
