@@ -16,6 +16,7 @@ class Settings(BaseModel):
     debug: bool = Field(default=False)
     log_level: str = Field(default="INFO")
     cors_origins: List[str] = Field(default_factory=list)
+    rate_limit: str = Field(default="30/minute")
 
     ai_provider: Literal["gemini", "ollama", "openrouter", "rule_based"] = Field(default="rule_based")
     gemini_api_key: Optional[str] = Field(default=None)
@@ -37,6 +38,8 @@ class Settings(BaseModel):
     sarvam_stt_model: str = Field(default="saaras:v4")
     sarvam_tts_model: str = Field(default="bulbul:v3")
     sarvam_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)
+    sarvam_stt_stream_url: str = Field(default="wss://api.sarvam.ai/speech-to-text/ws")
+    sarvam_tts_stream_url: str = Field(default="wss://api.sarvam.ai/text-to-speech/ws")
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -60,6 +63,7 @@ def get_settings() -> Settings:
         debug=_get_bool("DEBUG", False),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         cors_origins=_get_list("CORS_ORIGINS"),
+        rate_limit=os.getenv("RATE_LIMIT", "30/minute"),
         ai_provider=os.getenv("AI_PROVIDER", "rule_based"),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
@@ -80,4 +84,10 @@ def get_settings() -> Settings:
         sarvam_stt_model=os.getenv("SARVAM_STT_MODEL", "saaras:v4"),
         sarvam_tts_model=os.getenv("SARVAM_TTS_MODEL", "bulbul:v3"),
         sarvam_timeout_seconds=float(os.getenv("SARVAM_TIMEOUT_SECONDS", "45")),
+        sarvam_stt_stream_url=os.getenv(
+            "SARVAM_STT_STREAM_URL", "wss://api.sarvam.ai/speech-to-text/ws"
+        ),
+        sarvam_tts_stream_url=os.getenv(
+            "SARVAM_TTS_STREAM_URL", "wss://api.sarvam.ai/text-to-speech/ws"
+        ),
     )

@@ -1,6 +1,11 @@
+import contextlib
+import logging
+import time
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, WebSocket, status
+
+from app.core.config import get_settings
 
 from app.models.schemas import (
     AssistantChatForm,
@@ -20,8 +25,15 @@ from app.services.disease_detection import (
 )
 from app.services.assistant import AgriculturalAssistantService, get_assistant_service
 from app.services.pdf_extraction import extract_pdf_upload
-from app.services.sarvam_voice import SarvamVoiceService, get_sarvam_voice_service
+from app.services.sarvam_voice import (
+    SarvamVoiceService,
+    get_sarvam_voice_service,
+    load_keyterms,
+)
+from app.services.voice_stream import VoiceStreamSession
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -141,7 +153,13 @@ async def voice_chat(
     service: AgriculturalAssistantService = Depends(get_assistant_service),
     history: ChatHistoryService = Depends(get_chat_history_service),
 ) -> VoiceChatResponse:
-    speech = await voice.transcribe_upload(audio=audio, language_code=language_code or "unknown")
+    started = time.perf_counter()
+    speech = await voice.transcribe_upload(
+        audio=audio,
+        language_code=language_code or "unknown",
+        keyterms=load_keyterms(),
+    )
+    stt_done = time.perf_counter()
     detected_language = speech.language_code or (
         language_code if language_code and language_code != "unknown" else None
     )
@@ -155,7 +173,21 @@ async def voice_chat(
         service,
         history,
     )
+    llm_done = time.perf_counter()
     audios = await voice.synthesize_speech(response.answer, detected_language)
+    tts_done = time.perf_counter()
+    # The LLM phase also covers the chat-history reads and writes around the model call.
+    logger.info(
+        "Voice chat timings conversation_id=%s language=%s stt_ms=%d llm_ms=%d tts_ms=%d "
+        "total_ms=%d audio_chunks=%d",
+        response.conversation_id,
+        detected_language,
+        (stt_done - started) * 1000,
+        (llm_done - stt_done) * 1000,
+        (tts_done - llm_done) * 1000,
+        (tts_done - started) * 1000,
+        len(audios),
+    )
     return VoiceChatResponse(
         transcript=speech.transcript,
         detected_language=detected_language,
@@ -163,6 +195,42 @@ async def voice_chat(
         audios=audios,
         conversation_id=response.conversation_id,
     )
+
+
+@router.websocket("/assistant/voice/stream")
+async def voice_stream(
+    websocket: WebSocket,
+    conversation_id: Optional[str] = Query(default=None, max_length=80),
+    language_code: Optional[str] = Query(default=None, max_length=20),
+    service: AgriculturalAssistantService = Depends(get_assistant_service),
+    history: ChatHistoryService = Depends(get_chat_history_service),
+) -> None:
+    """Live voice conversation with barge-in.
+
+    App -> server: binary frames of 16 kHz, 16-bit mono PCM (about 100 ms each works well).
+    Server -> app: JSON text frames with a "type" of:
+    - "ready": {"conversation_id"}; send audio after this.
+    - "speech_start": {"interrupted"}; stop playback and drop queued audio (barge-in).
+    - "speech_end", then "transcript": {"text", "language_code"}.
+    - "answer_delta": {"text"} as the reply streams in.
+    - "audio": {"audio" (base64), "content_type"}; play chunks in order.
+    - "reply_end" when the reply's audio has all been sent.
+    - "error": {"detail"}; reply errors keep the connection open, connection errors close it.
+    """
+    await websocket.accept()
+    session = VoiceStreamSession(
+        websocket, get_settings(), service, history, conversation_id, language_code
+    )
+    close_code = status.WS_1000_NORMAL_CLOSURE
+    try:
+        await session.run()
+    except Exception as exc:
+        logger.exception("Voice stream failed")
+        await session.send_error(str(exc) or "The voice stream failed.")
+        close_code = status.WS_1011_INTERNAL_ERROR
+    # Closing fails harmlessly if the app has already disconnected.
+    with contextlib.suppress(RuntimeError):
+        await websocket.close(code=close_code)
 
 
 @router.post("/assistant/voice/synthesize", response_model=TextToSpeechResponse)

@@ -1,11 +1,13 @@
 import asyncio
+import json
 import logging
-from functools import lru_cache
-from typing import Any, Optional, Protocol
+from typing import Any, AsyncIterator, Optional, Protocol
 
 import httpx
+from starlette.requests import HTTPConnection
 
 from app.core.config import Settings, get_settings
+from app.core.http import MAX_ATTEMPTS, is_retryable, post_with_retries, retry_delay
 from app.models.schemas import AssistantRequest, AssistantResponse, ChatMessage
 
 
@@ -57,7 +59,10 @@ class AssistantProvider(Protocol):
     model_name: Optional[str]
 
     async def generate(self, messages: list[dict[str, str]]) -> str:
-        """Generate a reply from OpenAI-style chat messages (role + content)."""
+        """Generate a reply from OpenAI-style chat messages (role + content).
+
+        Providers may also define `stream(messages)`, an async iterator of text deltas.
+        """
         ...
 
 
@@ -107,19 +112,18 @@ class GeminiProvider:
 class OllamaProvider:
     provider_name = "ollama"
 
-    def __init__(self, base_url: str, model_name: str, timeout_seconds: float) -> None:
+    def __init__(self, base_url: str, model_name: str, client: httpx.AsyncClient) -> None:
         self.model_name = model_name
         self._base_url = base_url.rstrip("/")
-        self._timeout_seconds = timeout_seconds
+        self._client = client
 
     async def generate(self, messages: list[dict[str, str]]) -> str:
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.post(
-                f"{self._base_url}/api/chat",
-                json={"model": self.model_name, "messages": messages, "stream": False},
-            )
-            response.raise_for_status()
-            payload = response.json()
+        response = await self._client.post(
+            f"{self._base_url}/api/chat",
+            json={"model": self.model_name, "messages": messages, "stream": False},
+        )
+        response.raise_for_status()
+        payload = response.json()
 
         text = (payload.get("message") or {}).get("content", "")
         if not text.strip():
@@ -130,28 +134,30 @@ class OllamaProvider:
 class OpenRouterProvider:
     provider_name = "openrouter"
 
-    def __init__(self, api_key: str, base_url: str, model_name: str, timeout_seconds: float) -> None:
+    def __init__(
+        self, api_key: str, base_url: str, model_name: str, client: httpx.AsyncClient
+    ) -> None:
         self.model_name = model_name
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
-        self._timeout_seconds = timeout_seconds
+        self._client = client
 
     async def generate(self, messages: list[dict[str, str]]) -> str:
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "temperature": 0.3,
-                },
-            )
-            response.raise_for_status()
-            payload = response.json()
+        response = await post_with_retries(
+            self._client,
+            f"{self._base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model_name,
+                "messages": messages,
+                "temperature": 0.3,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
 
         try:
             text = payload["choices"][0]["message"]["content"]
@@ -161,6 +167,67 @@ class OpenRouterProvider:
         if not text.strip():
             raise AssistantServiceError("OpenRouter returned an empty response.")
         return text.strip()
+
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+        """Yield reply text deltas as OpenRouter streams them (server-sent events).
+
+        Retries 429/5xx before the stream starts. Cancelling the consumer closes the
+        connection, which tells OpenRouter to stop generating.
+        """
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            async with self._client.stream(
+                "POST",
+                f"{self._base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "stream": True,
+                },
+            ) as response:
+                if is_retryable(response.status_code) and attempt < MAX_ATTEMPTS:
+                    delay = retry_delay(response, attempt)
+                else:
+                    if response.is_error:
+                        await response.aread()
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        # Skips blank lines and ": OPENROUTER PROCESSING" keep-alive comments.
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[len("data:"):].strip()
+                        if data == "[DONE]":
+                            return
+                        delta = self._parse_stream_chunk(data)
+                        if delta:
+                            yield delta
+                    return
+            logger.warning(
+                "Retrying OpenRouter stream status=%d attempt=%d/%d delay=%.2fs",
+                response.status_code,
+                attempt,
+                MAX_ATTEMPTS,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+    def _parse_stream_chunk(self, data: str) -> Optional[str]:
+        try:
+            chunk = json.loads(data)
+        except ValueError as exc:
+            raise AssistantServiceError("OpenRouter sent an invalid stream chunk.") from exc
+        # Errors after the stream has started arrive as a chunk with a top-level "error".
+        if chunk.get("error"):
+            message = (chunk["error"] or {}).get("message", "unknown error")
+            raise AssistantServiceError(f"OpenRouter stream failed: {message}")
+        choices = chunk.get("choices") or []
+        if not choices:
+            return None
+        return (choices[0].get("delta") or {}).get("content")
 
 
 class RuleBasedProvider:
@@ -179,24 +246,23 @@ class RuleBasedProvider:
 
 
 class AgriculturalAssistantService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, client: httpx.AsyncClient) -> None:
         self._settings = settings
-        self._provider = self._build_provider(settings)
+        self._provider = self._build_provider(settings, client)
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider.provider_name
+
+    @property
+    def model_name(self) -> Optional[str]:
+        return self._provider.model_name
 
     async def answer(
         self, request: AssistantRequest, history: Optional[list[ChatMessage]] = None
     ) -> AssistantResponse:
         messages = self._build_messages(request, history or [])
-        logger.info(
-            "Generating agricultural guidance provider=%s mode=%s crop=%s disease=%s location=%s "
-            "history=%d",
-            self._provider.provider_name,
-            request.mode,
-            request.crop,
-            request.disease,
-            request.location,
-            len(history or []),
-        )
+        self._log_generation(request, history)
         try:
             answer = await self._provider.generate(messages)
         except httpx.HTTPError as exc:
@@ -208,17 +274,43 @@ class AgriculturalAssistantService:
             model=self._provider.model_name,
         )
 
-    def _build_provider(self, settings: Settings) -> AssistantProvider:
+    async def stream_answer(
+        self, request: AssistantRequest, history: Optional[list[ChatMessage]] = None
+    ) -> AsyncIterator[str]:
+        """Yield the reply as text deltas; providers without streaming yield it in one piece."""
+        messages = self._build_messages(request, history or [])
+        self._log_generation(request, history)
+        stream = getattr(self._provider, "stream", None)
+        try:
+            if stream is None:
+                yield await self._provider.generate(messages)
+                return
+            async for delta in stream(messages):
+                yield delta
+        except httpx.HTTPError as exc:
+            raise AssistantServiceError(f"AI provider request failed: {exc}") from exc
+
+    def _log_generation(
+        self, request: AssistantRequest, history: Optional[list[ChatMessage]]
+    ) -> None:
+        logger.info(
+            "Generating agricultural guidance provider=%s mode=%s crop=%s disease=%s location=%s "
+            "history=%d",
+            self._provider.provider_name,
+            request.mode,
+            request.crop,
+            request.disease,
+            request.location,
+            len(history or []),
+        )
+
+    def _build_provider(self, settings: Settings, client: httpx.AsyncClient) -> AssistantProvider:
         if settings.ai_provider == "gemini":
             if not settings.gemini_api_key:
                 raise AssistantServiceError("GEMINI_API_KEY is required when AI_PROVIDER=gemini.")
             return GeminiProvider(settings.gemini_api_key, settings.gemini_model)
         if settings.ai_provider == "ollama":
-            return OllamaProvider(
-                settings.ollama_base_url,
-                settings.ollama_model,
-                settings.ai_timeout_seconds,
-            )
+            return OllamaProvider(settings.ollama_base_url, settings.ollama_model, client)
         if settings.ai_provider == "openrouter":
             if not settings.openrouter_api_key:
                 raise AssistantServiceError("OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter.")
@@ -226,7 +318,7 @@ class AgriculturalAssistantService:
                 settings.openrouter_api_key,
                 settings.openrouter_base_url,
                 settings.openrouter_model,
-                settings.ai_timeout_seconds,
+                client,
             )
         return RuleBasedProvider()
 
@@ -256,6 +348,11 @@ Farmer question:
 """.strip()
 
 
-@lru_cache
-def get_assistant_service() -> AgriculturalAssistantService:
-    return AgriculturalAssistantService(get_settings())
+def create_assistant_http_client(settings: Settings) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=settings.ai_timeout_seconds)
+
+
+def get_assistant_service(connection: HTTPConnection) -> AgriculturalAssistantService:
+    # The HTTP client is shared across requests; it is opened and closed in the app lifespan.
+    # HTTPConnection (not Request) so the dependency also works for WebSocket routes.
+    return AgriculturalAssistantService(get_settings(), connection.app.state.assistant_http)

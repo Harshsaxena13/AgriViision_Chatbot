@@ -1,0 +1,61 @@
+{
+  "crops": [
+    "gehun",
+    "dhaan",
+    "sarson",
+    "makka",
+    "bajra",
+    "jowar",
+    "chana",
+    "arhar",
+    "moong",
+    "urad",
+    "masoor",
+    "ganna",
+    "kapas",
+    "aloo",
+    "soybean",
+    "mungfali"
+  ],
+  "diseases": [
+    "rust",
+    "peela ratua",
+    "bhura ratua",
+    "blight",
+    "jhulsa",
+    "blast",
+    "karnal bunt",
+    "kandua",
+    "powdery mildew",
+    "ukhtha",
+    "leaf curl",
+    "mosaic"
+  ],
+  "pests": [
+    "maahu",
+    "sundi",
+    "tana chhedak",
+    "safed makkhi",
+    "dimak",
+    "fall armyworm"
+  ],
+  "fertilizers": [
+    "urea",
+    "DAP",
+    "MOP",
+    "NPK",
+    "SSP",
+    "potash",
+    "zinc sulphate",
+    "gobar khad",
+    "vermicompost"
+  ],
+  "pesticides": [
+    "mancozeb",
+    "propiconazole",
+    "tebuconazole",
+    "carbendazim",
+    "imidacloprid",
+    "neem oil"
+  ]
+}

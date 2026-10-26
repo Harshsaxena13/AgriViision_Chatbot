@@ -32,6 +32,8 @@ permission enabled.
 - `POST /api/v1/assistant/voice/transcribe`
 - `POST /api/v1/assistant/voice/synthesize`
 - `POST /api/v1/assistant/voice/chat`
+- `WS /api/v1/assistant/voice/stream` (live voice with barge-in; message protocol in the
+  `voice_stream` docstring in `app/api/routes/assistant.py`)
 - `GET /api/v1/assistant/chats/{conversation_id}`
 
 Image diagnosis expects multipart form data:

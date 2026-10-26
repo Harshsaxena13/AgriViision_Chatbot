@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.models.schemas import ErrorResponse
@@ -25,6 +26,19 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=ErrorResponse(
                 error="http_error",
                 detail=str(exc.detail),
+                request_id=request.headers.get("x-request-id"),
+            ).model_dump(),
+        )
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exception_handler(
+        request: Request, exc: RateLimitExceeded
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content=ErrorResponse(
+                error="rate_limit_exceeded",
+                detail=f"Too many requests. Limit: {exc.detail}.",
                 request_id=request.headers.get("x-request-id"),
             ).model_dump(),
         )

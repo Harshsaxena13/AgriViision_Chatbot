@@ -2,7 +2,7 @@ import logging
 from typing import Any, Optional
 
 import httpx
-from fastapi import UploadFile, status
+from fastapi import Request, UploadFile, status
 from starlette.exceptions import HTTPException
 
 from app.core.config import Settings, get_settings
@@ -19,8 +19,9 @@ class DiseaseDetectionError(RuntimeError):
 class WheatDiseaseDetectionService:
     _allowed_content_types = {"image/jpeg", "image/png", "image/webp"}
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, client: httpx.AsyncClient) -> None:
         self._settings = settings
+        self._client = client
 
     async def predict_upload(self, image: UploadFile) -> DiseaseDetectionResponse:
         content_type = image.content_type or "application/octet-stream"
@@ -50,20 +51,17 @@ class WheatDiseaseDetectionService:
         logger.info("Calling wheat disease API endpoint=%s filename=%s", endpoint, filename)
 
         try:
-            async with httpx.AsyncClient(
-                timeout=self._settings.disease_api_timeout_seconds
-            ) as client:
-                response = await client.post(
-                    endpoint,
-                    files={
-                        self._settings.disease_api_file_field: (
-                            filename,
-                            image_bytes,
-                            content_type,
-                        )
-                    },
-                )
-                response.raise_for_status()
+            response = await self._client.post(
+                endpoint,
+                files={
+                    self._settings.disease_api_file_field: (
+                        filename,
+                        image_bytes,
+                        content_type,
+                    )
+                },
+            )
+            response.raise_for_status()
         except httpx.HTTPError as exc:
             raise DiseaseDetectionError(f"Wheat disease API request failed: {exc}") from exc
 
@@ -120,5 +118,10 @@ class WheatDiseaseDetectionService:
         return payload
 
 
-def get_disease_detection_service() -> WheatDiseaseDetectionService:
-    return WheatDiseaseDetectionService(get_settings())
+def create_disease_http_client(settings: Settings) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=settings.disease_api_timeout_seconds)
+
+
+def get_disease_detection_service(request: Request) -> WheatDiseaseDetectionService:
+    # The HTTP client is shared across requests; it is opened and closed in the app lifespan.
+    return WheatDiseaseDetectionService(get_settings(), request.app.state.disease_http)
